@@ -16,12 +16,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Trophy, Loader2 } from "lucide-react"
+import { Trophy, Loader2, Eye, EyeOff } from "lucide-react"
 
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
@@ -77,14 +78,29 @@ export default function LoginPage() {
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="password">Пароль</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Минимум 6 символов"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Минимум 6 символов"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
             {error && (
               <p className="text-sm text-destructive">{error}</p>
