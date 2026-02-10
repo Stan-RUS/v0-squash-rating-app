@@ -1,6 +1,5 @@
-import { execSync } from 'child_process';
-import { existsSync, mkdirSync, readdirSync, statSync, cpSync, rmSync } from 'fs';
-import { join, dirname } from 'path';
+const { existsSync, mkdirSync, readdirSync, cpSync } = require('fs');
+const { join, dirname } = require('path');
 
 const src = '/vercel/share/v0-project/v0-squash-rating-app';
 const dest = '/vercel/share/v0-project';
@@ -11,8 +10,8 @@ function copyRecursive(source, target) {
     const srcPath = join(source, entry.name);
     const destPath = join(target, entry.name);
     
-    // Skip node_modules and .git and pnpm-lock.yaml
-    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'pnpm-lock.yaml') continue;
+    // Skip node_modules, .git, pnpm-lock.yaml, and the v0-squash-rating-app folder itself
+    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'pnpm-lock.yaml' || entry.name === 'v0-squash-rating-app') continue;
     
     if (entry.isDirectory()) {
       if (!existsSync(destPath)) {
@@ -25,7 +24,7 @@ function copyRecursive(source, target) {
         mkdirSync(dir, { recursive: true });
       }
       cpSync(srcPath, destPath);
-      console.log(`Copied: ${entry.name} -> ${destPath.replace(dest + '/', '')}`);
+      console.log('Copied: ' + destPath.replace(dest + '/', ''));
     }
   }
 }
