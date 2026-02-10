@@ -1,0 +1,367 @@
+"use client"
+
+import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { Loader2, Check, ChevronsUpDown, Swords } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { MATCH_TYPE_LABELS } from "@/lib/elo"
+import { toast } from "sonner"
+
+interface PlayerOption {
+  id: string
+  name: string
+  rating: number
+}
+
+interface RatingSettings {
+  pending_expiry_days: number
+  anti_duplicate_hours: number
+}
+
+export function MatchForm({
+  currentPlayer,
+  opponents,
+  settings,
+}: {
+  currentPlayer: PlayerOption
+  opponents: PlayerOption[]
+  settings: RatingSettings | null
+}) {
+  const router = useRouter()
+  const [opponentId, setOpponentId] = useState("")
+  const [matchType, setMatchType] = useState("friendly")
+  const [scoreA, setScoreA] = useState<number | null>(null)
+  const [scoreB, setScoreB] = useState<number | null>(null)
+  const [games, setGames] = useState<
+    { scoreA: string; scoreB: string }[]
+  >([
+    { scoreA: "", scoreB: "" },
+    { scoreA: "", scoreB: "" },
+    { scoreA: "", scoreB: "" },
+  ])
+  const [loading, setLoading] = useState(false)
+  const [opponentOpen, setOpponentOpen] = useState(false)
+
+  const opponent = opponents.find((p) => p.id === opponentId)
+
+  const handleScoreSelect = (a: number, b: number) => {
+    setScoreA(a)
+    setScoreB(b)
+  }
+
+  const totalGames = scoreA !== null && scoreB !== null ? (scoreA + scoreB) : 0
+
+  const handleSubmit = async () => {
+    if (!opponentId) {
+      toast.error("Выберите соперника")
+      return
+    }
+    if (scoreA === null || scoreB === null) {
+      toast.error("Выберите счёт по играм")
+      return
+    }
+
+    // Validate game details
+    const gameDetails = games.slice(0, totalGames).map((g) => ({
+      score_a: parseInt(g.scoreA) || 0,
+      score_b: parseInt(g.scoreB) || 0,
+    }))
+
+    const validGames = gameDetails.every(
+      (g) => g.score_a >= 0 && g.score_b >= 0 && (g.score_a > 0 || g.score_b > 0)
+    )
+
+    if (!validGames && totalGames > 0) {
+      toast.error("Заполните счёт по геймам")
+      return
+    }
+
+    setLoading(true)
+
+    const supabase = createClient()
+
+    // Determine player_a and player_b (creator is always player_a)
+    const expiryDays = settings?.pending_expiry_days ?? 14
+    const deadline = new Date()
+    deadline.setDate(deadline.getDate() + expiryDays)
+
+    const { data: match, error } = await supabase
+      .from("matches")
+      .insert({
+        player_a_id: currentPlayer.id,
+        player_b_id: opponentId,
+        created_by_player_id: currentPlayer.id,
+        match_type: matchType,
+        score_a_games: scoreA,
+        score_b_games: scoreB,
+        games_details: gameDetails.length > 0 ? gameDetails : null,
+        status: "pending",
+        confirm_deadline_at: deadline.toISOString(),
+        rating_a_at_time: currentPlayer.rating,
+        rating_b_at_time: opponent?.rating ?? 1500,
+      })
+      .select("id")
+      .single()
+
+    if (error) {
+      toast.error("Ошибка: " + error.message)
+      setLoading(false)
+      return
+    }
+
+    // Create notification for opponent
+    if (opponent) {
+      const { data: oppPlayer } = await supabase
+        .from("players")
+        .select("user_id")
+        .eq("id", opponentId)
+        .single()
+
+      if (oppPlayer?.user_id) {
+        await supabase.from("notifications").insert({
+          user_id: oppPlayer.user_id,
+          type: "match_pending",
+          title: "Новый матч для подтверждения",
+          body: `${currentPlayer.name} записал матч: ${scoreA}:${scoreB}`,
+          link: `/matches/${match.id}`,
+        })
+      }
+    }
+
+    toast.success("Матч записан! Ожидает подтверждения соперника.")
+    router.push("/dashboard")
+    router.refresh()
+  }
+
+  const scoreOptions = [
+    { a: 2, b: 0, label: "2 : 0" },
+    { a: 2, b: 1, label: "2 : 1" },
+    { a: 1, b: 2, label: "1 : 2" },
+    { a: 0, b: 2, label: "0 : 2" },
+  ]
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Opponent select */}
+      <div className="flex flex-col gap-2">
+        <Label>Соперник</Label>
+        <Popover open={opponentOpen} onOpenChange={setOpponentOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={opponentOpen}
+              className="justify-between h-10 bg-transparent"
+            >
+              {opponent ? (
+                <span className="flex items-center gap-2">
+                  {opponent.name}
+                  <Badge variant="secondary" className="text-xs">
+                    {opponent.rating}
+                  </Badge>
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  Выберите соперника...
+                </span>
+              )}
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)]" align="start">
+            <Command>
+              <CommandInput placeholder="Поиск..." />
+              <CommandList>
+                <CommandEmpty>Не найдено</CommandEmpty>
+                <CommandGroup>
+                  {opponents.map((p) => (
+                    <CommandItem
+                      key={p.id}
+                      value={p.name}
+                      onSelect={() => {
+                        setOpponentId(p.id)
+                        setOpponentOpen(false)
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          opponentId === p.id ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      <span className="flex-1">{p.name}</span>
+                      <Badge variant="secondary" className="text-xs ml-2">
+                        {p.rating}
+                      </Badge>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      {/* Match type */}
+      <div className="flex flex-col gap-2">
+        <Label>Тип матча</Label>
+        <Select value={matchType} onValueChange={setMatchType}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(MATCH_TYPE_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Score (bo3) */}
+      <div className="flex flex-col gap-2">
+        <Label>Счёт по играм (best of 3)</Label>
+        <div className="grid grid-cols-4 gap-2">
+          {scoreOptions.map((opt) => (
+            <Button
+              key={opt.label}
+              type="button"
+              variant={
+                scoreA === opt.a && scoreB === opt.b ? "default" : "outline"
+              }
+              className={cn(
+                "h-12 text-base font-bold tabular-nums",
+                scoreA === opt.a && scoreB === opt.b
+                  ? ""
+                  : "hover:border-primary"
+              )}
+              onClick={() => handleScoreSelect(opt.a, opt.b)}
+            >
+              {opt.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {/* Game details */}
+      {totalGames > 0 && (
+        <div className="flex flex-col gap-3">
+          <Label>
+            {"Счёт по геймам (необязательно)"}
+          </Label>
+          {games.slice(0, totalGames).map((game, idx) => (
+            <Card key={idx}>
+              <CardContent className="pt-3 pb-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-muted-foreground w-14 shrink-0">
+                    {"Игра "}
+                    {idx + 1}
+                  </span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={99}
+                    placeholder={currentPlayer.name.split(" ")[0]}
+                    value={game.scoreA}
+                    onChange={(e) => {
+                      const updated = [...games]
+                      updated[idx] = { ...updated[idx], scoreA: e.target.value }
+                      setGames(updated)
+                    }}
+                    className="text-center tabular-nums h-9"
+                  />
+                  <span className="text-muted-foreground font-bold">:</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={99}
+                    placeholder={opponent?.name.split(" ")[0] ?? "Соперник"}
+                    value={game.scoreB}
+                    onChange={(e) => {
+                      const updated = [...games]
+                      updated[idx] = { ...updated[idx], scoreB: e.target.value }
+                      setGames(updated)
+                    }}
+                    className="text-center tabular-nums h-9"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Submit */}
+      <Button
+        size="lg"
+        className="w-full gap-2"
+        onClick={handleSubmit}
+        disabled={loading || !opponentId || scoreA === null || scoreB === null}
+      >
+        {loading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <>
+            <Swords className="h-4 w-4" />
+            Записать матч
+          </>
+        )}
+      </Button>
+
+      {opponent && scoreA !== null && scoreB !== null && (
+        <Card className="bg-muted/50">
+          <CardContent className="pt-4 pb-4">
+            <p className="text-sm text-center text-muted-foreground">
+              {currentPlayer.name}
+              {" ("}
+              {currentPlayer.rating}
+              {") "}
+              <span className="font-bold text-foreground">
+                {scoreA}
+                {" : "}
+                {scoreB}
+              </span>
+              {" "}
+              {opponent.name}
+              {" ("}
+              {opponent.rating}
+              {")"}
+            </p>
+            <p className="text-xs text-center text-muted-foreground mt-1">
+              {"Матч будет отправлен "}
+              {opponent.name}
+              {" для подтверждения"}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
