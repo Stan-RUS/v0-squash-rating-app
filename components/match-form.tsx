@@ -237,29 +237,37 @@ export function MatchForm({
     { a: 0, b: 2, label: "0 : 2" },
   ]
 
-  return (
-    <div className="flex flex-col gap-5">
-      {/* Opponent select */}
+  const renderPlayerSelector = (
+    label: string,
+    placeholder: string,
+    selectedId: string,
+    setSelectedId: (id: string) => void,
+    open: boolean,
+    setOpen: (open: boolean) => void,
+    options: PlayerOption[]
+  ) => {
+    const selected = options.find((p) => p.id === selectedId)
+    return (
       <div className="flex flex-col gap-2">
-        <Label>Соперник</Label>
-        <Popover open={opponentOpen} onOpenChange={setOpponentOpen}>
+        <Label>{label}</Label>
+        <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <Button
               variant="outline"
               role="combobox"
-              aria-expanded={opponentOpen}
+              aria-expanded={open}
               className="justify-between h-10 bg-transparent"
             >
-              {opponent ? (
+              {selected ? (
                 <span className="flex items-center gap-2">
-                  {opponent.name}
+                  {selected.name}
                   <Badge variant="secondary" className="text-xs">
-                    {opponent.rating}
+                    {selected.rating}
                   </Badge>
                 </span>
               ) : (
                 <span className="text-muted-foreground">
-                  Выберите соперника...
+                  {placeholder}
                 </span>
               )}
               <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -271,19 +279,19 @@ export function MatchForm({
               <CommandList>
                 <CommandEmpty>Не найдено</CommandEmpty>
                 <CommandGroup>
-                  {opponents.map((p) => (
+                  {options.map((p) => (
                     <CommandItem
                       key={p.id}
                       value={p.name}
                       onSelect={() => {
-                        setOpponentId(p.id)
-                        setOpponentOpen(false)
+                        setSelectedId(p.id)
+                        setOpen(false)
                       }}
                     >
                       <Check
                         className={cn(
                           "mr-2 h-4 w-4",
-                          opponentId === p.id ? "opacity-100" : "opacity-0"
+                          selectedId === p.id ? "opacity-100" : "opacity-0"
                         )}
                       />
                       <span className="flex-1">{p.name}</span>
@@ -298,6 +306,59 @@ export function MatchForm({
           </PopoverContent>
         </Popover>
       </div>
+    )
+  }
+
+  const isPlayersSelected = isAdmin
+    ? !!(playerAId && playerBId)
+    : !!opponentId
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Admin badge */}
+      {isAdmin && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="pt-3 pb-3">
+            <p className="text-sm text-center text-primary font-medium">
+              {"Режим администратора: матч будет автоматически подтверждён"}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Player selection */}
+      {isAdmin ? (
+        <>
+          {renderPlayerSelector(
+            "Игрок A",
+            "Выберите игрока A...",
+            playerAId,
+            setPlayerAId,
+            playerAOpen,
+            setPlayerAOpen,
+            playerAOptions
+          )}
+          {renderPlayerSelector(
+            "Игрок B",
+            "Выберите игрока B...",
+            playerBId,
+            setPlayerBId,
+            playerBOpen,
+            setPlayerBOpen,
+            playerBOptions
+          )}
+        </>
+      ) : (
+        renderPlayerSelector(
+          "Соперник",
+          "Выберите соперника...",
+          opponentId,
+          setOpponentId,
+          opponentOpen,
+          setOpponentOpen,
+          opponents
+        )
+      )}
 
       {/* Match type */}
       <div className="flex flex-col gap-2">
@@ -359,7 +420,7 @@ export function MatchForm({
                     type="number"
                     min={0}
                     max={99}
-                    placeholder={currentPlayer.name.split(" ")[0]}
+                    placeholder={effectivePlayerA?.name.split(" ")[0] ?? "Игрок A"}
                     value={game.scoreA}
                     onChange={(e) => {
                       const updated = [...games]
@@ -373,7 +434,7 @@ export function MatchForm({
                     type="number"
                     min={0}
                     max={99}
-                    placeholder={opponent?.name.split(" ")[0] ?? "Соперник"}
+                    placeholder={effectivePlayerB?.name.split(" ")[0] ?? "Игрок B"}
                     value={game.scoreB}
                     onChange={(e) => {
                       const updated = [...games]
@@ -394,7 +455,7 @@ export function MatchForm({
         size="lg"
         className="w-full gap-2"
         onClick={handleSubmit}
-        disabled={loading || !opponentId || scoreA === null || scoreB === null}
+        disabled={loading || !isPlayersSelected || scoreA === null || scoreB === null}
       >
         {loading ? (
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -406,13 +467,13 @@ export function MatchForm({
         )}
       </Button>
 
-      {opponent && scoreA !== null && scoreB !== null && (
+      {effectivePlayerA && effectivePlayerB && scoreA !== null && scoreB !== null && (
         <Card className="bg-muted/50">
           <CardContent className="pt-4 pb-4">
             <p className="text-sm text-center text-muted-foreground">
-              {currentPlayer.name}
+              {effectivePlayerA.name}
               {" ("}
-              {currentPlayer.rating}
+              {effectivePlayerA.rating}
               {") "}
               <span className="font-bold text-foreground">
                 {scoreA}
@@ -420,15 +481,15 @@ export function MatchForm({
                 {scoreB}
               </span>
               {" "}
-              {opponent.name}
+              {effectivePlayerB.name}
               {" ("}
-              {opponent.rating}
+              {effectivePlayerB.rating}
               {")"}
             </p>
             <p className="text-xs text-center text-muted-foreground mt-1">
-              {"Матч будет отправлен "}
-              {opponent.name}
-              {" для подтверждения"}
+              {isAdmin
+                ? "Матч будет автоматически подтверждён администратором"
+                : `Матч будет отправлен ${effectivePlayerB.name} для подтверждения`}
             </p>
           </CardContent>
         </Card>
