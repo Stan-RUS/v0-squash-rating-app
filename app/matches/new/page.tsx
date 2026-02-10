@@ -13,17 +13,22 @@ export default async function NewMatchPage() {
 
   const { data: currentPlayer } = await supabase
     .from("players")
-    .select("id, name, rating")
+    .select("id, name, rating, role")
     .eq("user_id", user.id)
     .single()
 
   if (!currentPlayer) redirect("/auth/login")
 
+  const isAdmin = currentPlayer.role === "admin"
+
+  // For admins, fetch ALL players (including self) so they can pick both sides
   const { data: allPlayers } = await supabase
     .from("players")
     .select("id, name, rating")
-    .neq("id", currentPlayer.id)
     .order("name")
+
+  // Non-admin opponents exclude the current player
+  const opponents = (allPlayers ?? []).filter((p) => p.id !== currentPlayer.id)
 
   const { data: settings } = await supabase
     .from("rating_settings")
@@ -40,7 +45,9 @@ export default async function NewMatchPage() {
         </h1>
         <MatchForm
           currentPlayer={currentPlayer}
-          opponents={allPlayers ?? []}
+          opponents={opponents}
+          allPlayers={allPlayers ?? []}
+          isAdmin={isAdmin}
           settings={settings}
         />
       </main>

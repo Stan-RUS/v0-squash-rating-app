@@ -47,14 +47,26 @@ interface RatingSettings {
 export function MatchForm({
   currentPlayer,
   opponents,
+  allPlayers,
+  isAdmin,
   settings,
 }: {
   currentPlayer: PlayerOption
   opponents: PlayerOption[]
+  allPlayers: PlayerOption[]
+  isAdmin: boolean
   settings: RatingSettings | null
 }) {
   const router = useRouter()
+  // Admin mode: select both players
+  const [playerAId, setPlayerAId] = useState("")
+  const [playerBId, setPlayerBId] = useState("")
+  const [playerAOpen, setPlayerAOpen] = useState(false)
+  const [playerBOpen, setPlayerBOpen] = useState(false)
+  // Regular mode: select opponent only
   const [opponentId, setOpponentId] = useState("")
+  const [opponentOpen, setOpponentOpen] = useState(false)
+
   const [matchType, setMatchType] = useState("friendly")
   const [scoreA, setScoreA] = useState<number | null>(null)
   const [scoreB, setScoreB] = useState<number | null>(null)
@@ -66,9 +78,18 @@ export function MatchForm({
     { scoreA: "", scoreB: "" },
   ])
   const [loading, setLoading] = useState(false)
-  const [opponentOpen, setOpponentOpen] = useState(false)
 
-  const opponent = opponents.find((p) => p.id === opponentId)
+  // Resolve the actual players based on mode
+  const effectivePlayerA = isAdmin
+    ? allPlayers.find((p) => p.id === playerAId)
+    : currentPlayer
+  const effectivePlayerB = isAdmin
+    ? allPlayers.find((p) => p.id === playerBId)
+    : opponents.find((p) => p.id === opponentId)
+
+  // Filter options so admin can't pick the same player twice
+  const playerAOptions = allPlayers
+  const playerBOptions = allPlayers.filter((p) => p.id !== playerAId)
 
   const handleScoreSelect = (a: number, b: number) => {
     setScoreA(a)
@@ -78,9 +99,16 @@ export function MatchForm({
   const totalGames = scoreA !== null && scoreB !== null ? (scoreA + scoreB) : 0
 
   const handleSubmit = async () => {
-    if (!opponentId) {
-      toast.error("Выберите соперника")
-      return
+    if (isAdmin) {
+      if (!playerAId || !playerBId) {
+        toast.error("Выберите обоих игроков")
+        return
+      }
+    } else {
+      if (!opponentId) {
+        toast.error("Выберите соперника")
+        return
+      }
     }
     if (scoreA === null || scoreB === null) {
       toast.error("Выберите счёт по играм")
@@ -106,25 +134,32 @@ export function MatchForm({
 
     const supabase = createClient()
 
-    // Determine player_a and player_b (creator is always player_a)
+    const finalPlayerAId = isAdmin ? playerAId : currentPlayer.id
+    const finalPlayerBId = isAdmin ? playerBId : opponentId
+
     const expiryDays = settings?.pending_expiry_days ?? 14
     const deadline = new Date()
     deadline.setDate(deadline.getDate() + expiryDays)
 
+    // Admin-created matches are auto-confirmed
+    const matchStatus = isAdmin ? "confirmed" : "pending"
+
     const { data: match, error } = await supabase
       .from("matches")
       .insert({
-        player_a_id: currentPlayer.id,
-        player_b_id: opponentId,
+        player_a_id: finalPlayerAId,
+        player_b_id: finalPlayerBId,
         created_by_player_id: currentPlayer.id,
         match_type: matchType,
         score_a_games: scoreA,
         score_b_games: scoreB,
         games_details: gameDetails.length > 0 ? gameDetails : null,
-        status: "pending",
+        status: matchStatus,
         confirm_deadline_at: deadline.toISOString(),
-        rating_a_at_time: currentPlayer.rating,
-        rating_b_at_time: opponent?.rating ?? 1500,
+        rating_a_at_time: effectivePlayerA?.rating ?? 1500,
+        rating_b_at_time: effectivePlayerB?.rating ?? 1500,
+        admin_created: isAdmin,
+        confirmed_at: isAdmin ? new Date().toISOString() : null,
       })
       .select("id")
       .single()
@@ -135,26 +170,62 @@ export function MatchForm({
       return
     }
 
-    // Create notification for opponent
-    if (opponent) {
-      const { data: oppPlayer } = await supabase
-        .from("players")
-        .select("user_id")
-        .eq("id", opponentId)
-        .single()
+    // If admin-created and confirmed, update ratings
+    if (isAdmin && effectivePlayerA && effectivePlayerB) {
+      const { calculateElo, getKFactor } = await import("@/lib/elo")
+      const kA = getKFactor(matchType, effectivePlayerA.rating)
+      const kB = getKFactor(matchType, effectivePlayerB.rating)
+      const resultA = scoreA > scoreB ? 1 : scoreA < scoreB ? 0 : 0.5
+      const { newRatingA, newRatingB } = calculateElo(
+        effectivePlayerA.rating,
+        effectivePlayerB.rating,
+        resultA,
+        kA,
+        kB
+      )
 
-      if (oppPlayer?.user_id) {
-        await supabase.from("notifications").insert({
-          user_id: oppPlayer.user_id,
-          type: "match_pending",
-          title: "Новый матч для подтверждения",
-          body: `${currentPlayer.name} записал матч: ${scoreA}:${scoreB}`,
-          link: `/matches/${match.id}`,
+      await supabase
+        .from("matches")
+        .update({
+          rating_a_change: newRatingA - effectivePlayerA.rating,
+          rating_b_change: newRatingB - effectivePlayerB.rating,
         })
+        .eq("id", match.id)
+
+      await supabase
+        .from("players")
+        .update({ rating: newRatingA })
+        .eq("id", finalPlayerAId)
+
+      await supabase
+        .from("players")
+        .update({ rating: newRatingB })
+        .eq("id", finalPlayerBId)
+
+      toast.success("Матч записан и подтверждён. Рейтинги обновлены.")
+    } else {
+      // Create notification for opponent (non-admin flow)
+      if (effectivePlayerB) {
+        const { data: oppPlayer } = await supabase
+          .from("players")
+          .select("user_id")
+          .eq("id", finalPlayerBId)
+          .single()
+
+        if (oppPlayer?.user_id) {
+          await supabase.from("notifications").insert({
+            user_id: oppPlayer.user_id,
+            type: "match_pending",
+            title: "Новый матч для подтверждения",
+            body: `${currentPlayer.name} записал матч: ${scoreA}:${scoreB}`,
+            link: `/matches/${match.id}`,
+          })
+        }
       }
+
+      toast.success("Матч записан! Ожидает подтверждения соперника.")
     }
 
-    toast.success("Матч записан! Ожидает подтверждения соперника.")
     router.push("/dashboard")
     router.refresh()
   }
