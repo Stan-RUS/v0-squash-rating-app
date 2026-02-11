@@ -10,6 +10,7 @@ export default async function RatingPage() {
     .select(
       "id, name, rating, wins, losses, matches_count, calibration_matches_count, last_match_at, status_active"
     )
+    .eq("is_player", true)
     .order("rating", { ascending: false })
 
   return (

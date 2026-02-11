@@ -50,7 +50,7 @@ export default async function AdminPage() {
 
   const { data: allPlayers } = await supabase
     .from("players")
-    .select("id, name, rating, role, matches_count, status_active, user_id")
+    .select("id, name, rating, role, matches_count, status_active, user_id, is_player")
     .order("rating", { ascending: false })
 
   return (

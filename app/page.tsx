@@ -9,12 +9,14 @@ export default async function HomePage() {
   const { data: topPlayers } = await supabase
     .from("players")
     .select("id, name, rating, wins, losses, matches_count")
+    .eq("is_player", true)
     .order("rating", { ascending: false })
     .limit(10)
 
   const { count: totalPlayers } = await supabase
     .from("players")
     .select("*", { count: "exact", head: true })
+    .eq("is_player", true)
 
   const { count: totalMatches } = await supabase
     .from("matches")
