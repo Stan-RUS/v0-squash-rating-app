@@ -18,6 +18,17 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import {
   AlertTriangle,
   Shield,
   Settings,
@@ -27,6 +38,7 @@ import {
   Save,
   CheckCircle2,
   XCircle,
+  Trash2,
 } from "lucide-react"
 import { format } from "date-fns"
 import { ru } from "date-fns/locale"
@@ -328,6 +340,26 @@ function PlayersTab({
 }) {
   const router = useRouter()
   const [loading, setLoading] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
+
+  const handleDelete = async (playerId: string, playerName: string) => {
+    setDeleting(playerId)
+    try {
+      const res = await fetch(`/api/admin/players/${playerId}`, {
+        method: "DELETE",
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || "Ошибка удаления")
+      } else {
+        toast.success(`Игрок ${playerName} удалён`)
+        router.refresh()
+      }
+    } catch {
+      toast.error("Ошибка сети")
+    }
+    setDeleting(null)
+  }
 
   const toggleRole = async (playerId: string, currentRole: string) => {
     setLoading(playerId)
@@ -397,20 +429,59 @@ function PlayersTab({
                   </TableCell>
                   <TableCell className="text-right">
                     {p.user_id !== currentUserId && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleRole(p.id, p.role)}
-                        disabled={loading === p.id}
-                      >
-                        {loading === p.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : p.role === "admin" ? (
-                          "Убрать админа"
-                        ) : (
-                          "Сделать админом"
-                        )}
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleRole(p.id, p.role)}
+                          disabled={loading === p.id}
+                        >
+                          {loading === p.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : p.role === "admin" ? (
+                            "Убрать админа"
+                          ) : (
+                            "Сделать админом"
+                          )}
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              disabled={deleting === p.id}
+                            >
+                              {deleting === p.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                {"Удалить игрока?"}
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                {"Игрок "}
+                                <span className="font-semibold text-foreground">{p.name}</span>
+                                {" будет удалён вместе со всеми его матчами. Это действие необратимо."}
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>{"Отмена"}</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDelete(p.id, p.name)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                {"Удалить"}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
                     )}
                   </TableCell>
                 </TableRow>
@@ -498,7 +569,7 @@ function SettingsTab({ settings }: { settings: RatingSettingsData | null }) {
       ],
     },
     {
-      group: "Весовые коэффиц��енты",
+      group: "Весовые коэффиц����енты",
       items: [
         { key: "weight_friendly", label: "Товарищеский" },
         { key: "weight_ladder", label: "Лестница" },
