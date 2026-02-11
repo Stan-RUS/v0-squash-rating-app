@@ -600,7 +600,7 @@ function SettingsTab({ settings }: { settings: RatingSettingsData | null }) {
       ],
     },
     {
-      group: "Весовые коэффиц����енты",
+      group: "Весовые коэффициенты",
       items: [
         { key: "weight_friendly", label: "Товарищеский" },
         { key: "weight_ladder", label: "Лестница" },
