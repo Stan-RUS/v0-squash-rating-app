@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
@@ -82,6 +83,7 @@ interface PlayerRow {
   matches_count: number
   status_active: string
   user_id: string
+  is_player: boolean
 }
 
 interface RatingSettingsData {
@@ -361,6 +363,27 @@ function PlayersTab({
     setDeleting(null)
   }
 
+  const toggleIsPlayer = async (playerId: string, currentValue: boolean) => {
+    const supabase = createClient()
+    const newValue = !currentValue
+    const { error } = await supabase
+      .from("players")
+      .update({ is_player: newValue })
+      .eq("id", playerId)
+    if (error) {
+      toast.error("Ошибка обновления")
+      return
+    }
+    await supabase.from("audit_log").insert({
+      actor_user_id: (await supabase.auth.getUser()).data.user?.id,
+      entity_type: "player",
+      entity_id: playerId,
+      action: newValue ? "set_is_player_true" : "set_is_player_false",
+    })
+    toast.success(newValue ? "Добавлен в рейтинг" : "Исключён из рейтинга")
+    router.refresh()
+  }
+
   const toggleRole = async (playerId: string, currentRole: string) => {
     setLoading(playerId)
     const supabase = createClient()
@@ -400,6 +423,7 @@ function PlayersTab({
                   Матчи
                 </TableHead>
                 <TableHead className="text-center">Роль</TableHead>
+                <TableHead className="text-center">В рейтинге</TableHead>
                 <TableHead className="text-right">Действия</TableHead>
               </TableRow>
             </TableHeader>
@@ -426,6 +450,13 @@ function PlayersTab({
                     >
                       {p.role === "admin" ? "Админ" : "Игрок"}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Switch
+                      checked={p.is_player}
+                      onCheckedChange={() => toggleIsPlayer(p.id, p.is_player)}
+                      aria-label={p.is_player ? "Исключить из рейтинга" : "Включить в рейтинг"}
+                    />
                   </TableCell>
                   <TableCell className="text-right">
                     {p.user_id !== currentUserId && (

@@ -21,10 +21,11 @@ export default async function NewMatchPage() {
 
   const isAdmin = currentPlayer.role === "admin"
 
-  // For admins, fetch ALL players (including self) so they can pick both sides
+  // For admins, fetch ALL active players so they can pick both sides
   const { data: allPlayers } = await supabase
     .from("players")
     .select("id, name, rating")
+    .eq("is_player", true)
     .order("name")
 
   // Non-admin opponents exclude the current player
